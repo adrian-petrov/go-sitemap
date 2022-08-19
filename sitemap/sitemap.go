@@ -24,10 +24,8 @@ func (s *Sitemap) Build() {
 	s.SetBaseURL(url)
 	s.SetDepth(depth)
 
-	// here we add the websites we have already seen
-	seen := make(map[string]struct{})
-	sitemap := s.bfs(url, &seen)
-	s.formatXML(sitemap)
+	sitemap := s.bfs(url)
+	s.formatXML(&sitemap)
 }
 
 func (s *Sitemap) SetBaseURL(url string) {
@@ -78,36 +76,24 @@ func (s *Sitemap) formatXML(sitemap *map[string]struct{}) {
 	f.WriteString(URLSetClose)
 }
 
-func (s *Sitemap) bfs(url string, seen *map[string]struct{}) *map[string]struct{} {
-	// get the body
-	body, err := s.get(url)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// create the links
-	reader := bytes.NewReader(body)
-	links, err := htmlparser.ParseLinks(reader)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// normalise the URLS
-	normalised := s.normaliseURLS(links)
+func (s *Sitemap) bfs(url string) map[string]struct{} {
+	seen := make(map[string]struct{})
+	var queue *list.List
+	newQueue := list.New()
+	// enqueue first level of links
+	s.enqueueURLS(newQueue, url)
 
-	// 1. add the urls to the queue
-	queue := list.New()
-	for _, v := range normalised {
-		queue.PushBack(v)
-	}
-
-	for queue.Len() > 0 {
-		first := queue.Front()
-		url := first.Value.(string)
-		if _, ok := (*seen)[url]; !ok {
-			(*seen)[url] = struct{}{}
-			s.enqueueURLS(queue, url)
+	for i := 0; i < s.depth; i++ {
+		queue, newQueue = newQueue, list.New()
+		for queue.Len() > 0 {
+			first := queue.Front()
+			url := first.Value.(string)
+			if _, ok := seen[url]; !ok {
+				seen[url] = struct{}{}
+				s.enqueueURLS(newQueue, url)
+			}
+			queue.Remove(first)
 		}
-		// to work like a Pop()
-		queue.Remove(first)
 	}
 	return seen
 }
@@ -134,7 +120,7 @@ func (s *Sitemap) enqueueURLS(q *list.List, url string) {
 
 func (s *Sitemap) readFlags() (string, int) {
 	urlFlag := flag.String("url", "https://adrianpetrov.com", "url to use for sitemap")
-	depthFlag := flag.Int("depth", 5, "depth level to search for links")
+	depthFlag := flag.Int("depth", 3, "depth level to search for links")
 
 	flag.Parse()
 	return *urlFlag, *depthFlag
